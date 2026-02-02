@@ -174,7 +174,8 @@ def extract_mfcc(signal, n_mfcc, n_fft, hop_length):
 # ===============================================================
 
 def add_noise(signal, noise_factor=0.01):
-    return signal + noise_factor * np.random.randn(len(signal))
+    rng = np.random.default_rng(seed=42)
+    return signal + noise_factor * rng.standard_normal(len(signal))
 
 def change_volume(signal, factor=0.5):
     return signal * factor
@@ -255,25 +256,25 @@ def tune_mfcc(data):
         try:
             # Process in smaller batches to avoid memory issues
             batch_size = 200  # Smaller batch size
-            X_list, y_list = [], []
+            x_list, y_list = [], []
 
             for i in range(0, len(subset_data), batch_size):
                 batch = subset_data[i:i+batch_size]
-                X_batch, y_batch = generate_mfcc_features(batch, n_mfcc, n_fft, hop, n_jobs=2)  # Fewer parallel jobs
-                X_list.append(X_batch)
+                x_batch, y_batch = generate_mfcc_features(batch, n_mfcc, n_fft, hop, n_jobs=2)  # Fewer parallel jobs
+                x_list.append(x_batch)
                 y_list.append(y_batch)
 
-            X = np.concatenate(X_list, axis=0)
+            x = np.concatenate(x_list, axis=0)
             y = np.concatenate(y_list, axis=0)
 
-            X_stat = X.mean(axis=(2, 3))
-            X_tr, X_va, y_tr, y_va = train_test_split(
-                X_stat, y, stratify=y, test_size=0.2, random_state=42
+            x_stat = x.mean(axis=(2, 3))
+            x_tr, x_va, y_tr, y_va = train_test_split(
+                x_stat, y, stratify=y, test_size=0.2, random_state=42
             )
 
             svm = SVC(C=10, gamma="scale", class_weight="balanced")
-            svm.fit(X_tr, y_tr)
-            acc = svm.score(X_va, y_va)
+            svm.fit(x_tr, y_tr)
+            acc = svm.score(x_va, y_va)
 
             print(f"Validation accuracy: {acc:.4f}")
 
@@ -404,9 +405,9 @@ def main():
     best_mfcc = tune_mfcc(data)
 
     # 2️⃣ CNN training
-    X, y = generate_augmented_data_streaming(data, *best_mfcc)
-    X_tr, X_te, y_tr, y_te = train_test_split(
-        X, y, stratify=y, test_size=0.2, random_state=42
+    x, y = generate_augmented_data_streaming(data, *best_mfcc)
+    x_train, x_test, y_tr, y_te = train_test_split(
+        x, y, stratify=y, test_size=0.2, random_state=42
     )
 
     # Compute class weights for balanced training
@@ -414,7 +415,7 @@ def main():
     class_weights = compute_class_weight('balanced', classes=np.unique(y_tr), y=y_tr)
     class_weights = dict(enumerate(class_weights))
 
-    cnn = build_cnn(X_tr.shape[1:])
+    cnn = build_cnn(x_train.shape[1:])
     cnn.compile(
         optimizer=tf.keras.optimizers.Adam(1e-3),
         loss="sparse_categorical_crossentropy",
@@ -422,7 +423,7 @@ def main():
     )
 
     cnn.fit(
-        X_tr, y_tr,
+        x_train, y_tr,
         validation_split=0.1,
         epochs=100,
         batch_size=32,
@@ -435,13 +436,13 @@ def main():
 
     # 3️⃣ CNN → SVM
     extractor = models.Model(cnn.input, cnn.get_layer("embedding").output)
-    X_feat = extractor.predict(X_tr)
+    x_feat = extractor.predict(x_train)
     svm = SVC(kernel="rbf", probability=True, class_weight="balanced")
-    svm.fit(X_feat, y_tr)
+    svm.fit(x_feat, y_tr)
 
     # 4️⃣ Evaluation
-    X_te_feat = extractor.predict(X_te)
-    y_pred = svm.predict(X_te_feat)
+    x_te_feat = extractor.predict(x_test)
+    y_pred = svm.predict(x_te_feat)
     print(classification_report(y_te, y_pred))
 
     cnn.save("best_cnn.keras")
