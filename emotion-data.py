@@ -6,6 +6,7 @@ import random
 import logging
 from pathlib import Path
 import numpy as np
+import subprocess
 
 import librosa # type: ignore
 from tqdm import tqdm # type: ignore
@@ -39,6 +40,30 @@ if gpus:
             tf.config.experimental.set_memory_growth(gpu, True)
     except RuntimeError as e:
         print(e)
+
+# ===============================================================
+# PROCESSOR DETECTION
+# ===============================================================
+def detect_processor():
+    """
+    Detects the CPU model using WMIC command on Windows.
+    Returns the processor name or None if detection fails.
+    """
+    try:
+        result = subprocess.run(
+            ["wmic", "cpu", "get", "name"],
+            capture_output=True,
+            text=True,
+            shell=True
+        )
+        if result.returncode == 0:
+            lines = result.stdout.strip().split('\n')
+            if len(lines) > 1:
+                processor_name = lines[1].strip()
+                return processor_name
+    except Exception as e:
+        print(f"Error detecting processor: {e}")
+    return None
 
 # ===============================================================
 # LOGGING
@@ -217,7 +242,7 @@ def cached_mfcc(path, n_mfcc, n_fft, hop_length):
 # ===============================================================
 # MFCC FEATURE GENERATION (PARALLEL, NO AUG)
 # ===============================================================
-def generate_mfcc_features(data, n_mfcc, n_fft, hop_length, n_jobs=4):
+def generate_mfcc_features(data, n_mfcc, n_fft, hop_length, n_jobs=global_parallel_jobs_ultra):
     def process(item):
         path, label = item
         return cached_mfcc(path, n_mfcc, n_fft, hop_length), label
@@ -235,7 +260,7 @@ def generate_mfcc_features(data, n_mfcc, n_fft, hop_length, n_jobs=4):
 # MFCC TUNING (SVM-BASED, BATCHED, MEMORY EFFICIENT)
 # ===============================================================
 
-def tune_mfcc(data):
+def tune_mfcc(data, n_jobs=2):
     candidates = [
         (30, 512, 256),
         (40, 512, 256),
@@ -260,7 +285,7 @@ def tune_mfcc(data):
 
             for i in range(0, len(subset_data), batch_size):
                 batch = subset_data[i:i+batch_size]
-                x_batch, y_batch = generate_mfcc_features(batch, n_mfcc, n_fft, hop, n_jobs=2)  # Fewer parallel jobs
+                x_batch, y_batch = generate_mfcc_features(batch, n_mfcc, n_fft, hop, n_jobs=n_jobs)  # Use provided n_jobs
                 x_list.append(x_batch)
                 y_list.append(y_batch)
 
@@ -377,6 +402,22 @@ def generate_augmented_data_streaming(data, n_mfcc, n_fft, hop_length, max_sampl
 # MAIN
 # ===============================================================
 def main():
+    # Detect processor for optimized training on Intel Core Ultra 5 235
+    processor = detect_processor()
+    print(f"Detected processor: {processor}")
+
+    if processor and "Intel(R) Core(TM) Ultra 5 235" in processor:
+        print("🚀 Intel Core Ultra 5 235 detected! Optimizing TensorFlow and parallel processing for 14 cores/threads...")
+        # Adjust TensorFlow settings for Intel Core Ultra 5 235 (14 cores/threads)
+        os.environ["TF_NUM_INTEROP_THREADS"] = "14"
+        os.environ["TF_NUM_INTRAOP_THREADS"] = "14"
+        # Use all 14 threads for parallel processing
+        global_parallel_jobs_ultra = 14
+        print(f"Set TF_NUM_INTEROP_THREADS to 14, TF_NUM_INTRAOP_THREADS to 14, parallel jobs to {global_parallel_jobs_ultra}")
+    else:
+        print("Using default settings for current processor (optimized for Intel Core i5-10310U with 4 cores/8 threads)")
+        global_parallel_jobs_ultra = 4  # Default for i5-10310U
+
     print("📂 Indexing datasets...")
     print(f"RAVDESS root: {RAVDESS_ROOT}")
     print(f"CREMAD root: {CREMAD_ROOT}")
