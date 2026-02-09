@@ -416,7 +416,7 @@ def main():
 
     # 8. Save
     cnn.save("best_cnn.keras")
-    joblib.dump(svm, "best_svmpkl")
+    joblib.dump(svm, "best_svm.pkl")
     print("\n✅ ALL DONE")
 
 if __name__ == "__main__":
