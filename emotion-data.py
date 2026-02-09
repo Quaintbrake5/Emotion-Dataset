@@ -74,6 +74,7 @@ logger = logging.getLogger(__name__)
 # ===============================================================
 # CONFIG
 # ===============================================================
+global_parallel_jobs_ultra = 4  # default parallel jobs
 SCRIPT_DIR = Path(__file__).parent
 RAVDESS_ROOT = SCRIPT_DIR / "data" / "RAVDESS"
 CREMAD_ROOT = SCRIPT_DIR / "data" / "CREMA-D"
