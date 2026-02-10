@@ -26,6 +26,7 @@ flatbuffers==25.9.23
 fonttools==4.59.2
 gast==0.6.0
 google-pasta==0.2.0
+gradio==3.50.2
 greenlet==3.2.4
 grpcio==1.76.0
 h11==0.16.0
