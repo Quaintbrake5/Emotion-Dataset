@@ -44,10 +44,10 @@ else:
 
 def generate_spectrogram(signal):
     """Generate spectrogram from audio signal."""
-    # Parameters matching the training
+    # Parameters to match model input shape (180, 120)
     n_fft = 1024
-    hop_length = 512
-    n_mels = 128
+    hop_length = 368  # Adjusted to get ~180 time frames for 3s audio
+    n_mels = 120
 
     # Generate mel spectrogram
     mel_spec = librosa.feature.melspectrogram(
@@ -57,6 +57,17 @@ def generate_spectrogram(signal):
 
     # Normalize
     mel_spec_db = (mel_spec_db - np.min(mel_spec_db)) / (np.max(mel_spec_db) - np.min(mel_spec_db))
+
+    # Transpose to (time_frames, n_mels)
+    mel_spec_db = mel_spec_db.T
+
+    # Ensure exact shape (180, 120)
+    if mel_spec_db.shape[0] < 180:
+        # Pad time dimension (first dimension)
+        pad_width = ((0, 180 - mel_spec_db.shape[0]), (0, 0))
+        mel_spec_db = np.pad(mel_spec_db, pad_width, mode='constant')
+    else:
+        mel_spec_db = mel_spec_db[:180, :]
 
     return mel_spec_db.astype(np.float32)
 
@@ -90,9 +101,9 @@ def predict_emotion(embedding):
     return emotion_probabilities
 
 def process_audio(audio):
-    """Process audio file and return emotion predictions."""
+    """Process audio file and return emotion predictions as JSON string."""
     if audio is None:
-        return "No audio provided."
+        return '{"error": "No audio provided"}'
 
     try:
         # Load audio
@@ -107,18 +118,13 @@ def process_audio(audio):
         # Predict emotion
         emotion_probabilities = predict_emotion(embedding)
 
-        # Find primary emotion
-        primary_emotion = max(emotion_probabilities.items(), key=lambda x: x[1])
-
-        result = f"Primary Emotion: {primary_emotion[0].capitalize()} ({primary_emotion[1]:.2%})\n\n"
-        result += "All Probabilities:\n"
-        for emotion, prob in emotion_probabilities.items():
-            result += f"{emotion.capitalize()}: {prob:.2%}\n"
-
-        return result
+        # Return as JSON string
+        import json
+        return json.dumps(emotion_probabilities)
 
     except Exception as e:
-        return f"Error processing audio: {str(e)}"
+        import json
+        return json.dumps({"error": str(e)})
 
 # Create Gradio interface
 iface = gr.Interface(
@@ -130,4 +136,4 @@ iface = gr.Interface(
 )
 
 if __name__ == "__main__":
-    iface.launch()
+    iface.launch(show_error=True)
